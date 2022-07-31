@@ -1,5 +1,9 @@
 package com.dji.sdk.sample.demo.flightcontroller;
 
+import android.os.Handler;
+import android.os.Looper;
+import android.os.CountDownTimer;
+
 import android.app.Service;
 import android.content.Context;
 import android.view.LayoutInflater;
@@ -8,6 +12,7 @@ import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 import android.widget.ToggleButton;
 
 import androidx.annotation.NonNull;
@@ -25,6 +30,7 @@ import java.util.Timer;
 import java.util.TimerTask;
 
 import dji.common.error.DJIError;
+import dji.common.flightcontroller.FlightOrientationMode;
 import dji.common.flightcontroller.simulator.InitializationData;
 import dji.common.flightcontroller.simulator.SimulatorState;
 import dji.common.flightcontroller.virtualstick.FlightControlData;
@@ -38,6 +44,8 @@ import dji.keysdk.FlightControllerKey;
 import dji.keysdk.KeyManager;
 import dji.sdk.flightcontroller.FlightController;
 import dji.sdk.flightcontroller.Simulator;
+import dji.sdk.products.Aircraft;
+import dji.sdk.sdkmanager.DJISDKManager;
 
 //TODO: Refactor needed
 
@@ -58,6 +66,7 @@ public class  VirtualStickView extends RelativeLayout
     private Button btnSetYawControlMode;
     private Button btnSetVerticalControlMode;
     private Button btnSetRollPitchControlMode;
+    private Button btnCustom;
     private ToggleButton btnSimulator;
     private Button btnTakeOff;
 
@@ -68,6 +77,14 @@ public class  VirtualStickView extends RelativeLayout
 
     private Timer sendVirtualStickDataTimer;
     private SendVirtualStickDataTask sendVirtualStickDataTask;
+
+
+    // custom variables
+    private Timer randomTimer1;
+    private Timer randomTimerPro;
+    private SendVirtualStickDataTask myVirtualTask;
+    private SendVirtualStickDataTask myVirtualTaskPro;
+    FlightControlData flightControlData = new FlightControlData(0,0,0,0);
 
     private float pitch;
     private float roll;
@@ -97,12 +114,21 @@ public class  VirtualStickView extends RelativeLayout
         if (null != sendVirtualStickDataTimer) {
             if (sendVirtualStickDataTask != null) {
                 sendVirtualStickDataTask.cancel();
-
             }
             sendVirtualStickDataTimer.cancel();
             sendVirtualStickDataTimer.purge();
             sendVirtualStickDataTimer = null;
             sendVirtualStickDataTask = null;
+        }
+
+        if (null != randomTimer1) {
+            if (myVirtualTask != null) {
+                myVirtualTask.cancel();
+            }
+            randomTimer1.cancel();
+            randomTimer1.purge();
+            randomTimer1 = null;
+            myVirtualTask = null;
         }
         tearDownListeners();
         super.onDetachedFromWindow();
@@ -128,6 +154,7 @@ public class  VirtualStickView extends RelativeLayout
         btnSetVerticalControlMode = (Button) findViewById(R.id.btn_vertical_control_mode);
         btnSetRollPitchControlMode = (Button) findViewById(R.id.btn_roll_pitch_control_mode);
         btnTakeOff = (Button) findViewById(R.id.btn_take_off);
+        btnCustom = (Button) findViewById(R.id.btn_custom);
 
         btnSimulator = (ToggleButton) findViewById(R.id.btn_start_simulator);
 
@@ -144,6 +171,7 @@ public class  VirtualStickView extends RelativeLayout
         btnSetRollPitchControlMode.setOnClickListener(this);
         btnTakeOff.setOnClickListener(this);
         btnSimulator.setOnCheckedChangeListener(VirtualStickView.this);
+        btnCustom.setOnClickListener(this);
 
         Boolean isSimulatorOn = (Boolean) KeyManager.getInstance().getValue(isSimulatorActived);
         if (isSimulatorOn != null && isSimulatorOn) {
@@ -176,7 +204,7 @@ public class  VirtualStickView extends RelativeLayout
             ToastUtils.setResultToToast("Disconnected!");
         }
 
-        screenJoystickLeft.setJoystickListener(new OnScreenJoystickListener() {
+        screenJoystickRight.setJoystickListener(new OnScreenJoystickListener() {
 
             @Override
             public void onTouch(OnScreenJoystick joystick, float pX, float pY) {
@@ -209,7 +237,7 @@ public class  VirtualStickView extends RelativeLayout
         });
 
 
-        screenJoystickRight.setJoystickListener(new OnScreenJoystickListener() {
+        screenJoystickLeft.setJoystickListener(new OnScreenJoystickListener() {
 
             @Override
             public void onTouch(OnScreenJoystick joystick, float pX, float pY) {
@@ -248,6 +276,7 @@ public class  VirtualStickView extends RelativeLayout
     @Override
     public void onClick(View v) {
         FlightController flightController = ModuleVerificationUtil.getFlightController();
+//        FlightControlData flightControlData = new FlightControlData(0,0,0,0);
         if (flightController == null) {
             return;
         }
@@ -269,6 +298,91 @@ public class  VirtualStickView extends RelativeLayout
                         DialogUtils.showDialogBasedOnError(getContext(), djiError);
                     }
                 });
+                break;
+
+            // Custom function
+            case R.id.btn_custom:
+                if (rollPitchControlModeFlag && yawControlModeFlag && verticalControlModeFlag && horizontalCoordinateFlag){     //setting the required constraints before take-off
+                    flightController.setRollPitchControlMode(RollPitchControlMode.VELOCITY);
+//                    rollPitchControlModeFlag = false;
+                    flightController.setYawControlMode(YawControlMode.ANGULAR_VELOCITY);
+//                    yawControlModeFlag = false;
+                    flightController.setVerticalControlMode(VerticalControlMode.VELOCITY);
+//                    verticalControlModeFlag = false;
+                    flightController.setRollPitchCoordinateSystem(FlightCoordinateSystem.BODY);
+//                    horizontalCoordinateFlag = false;
+
+
+                }
+                flightController.setFlightOrientationMode(FlightOrientationMode.AIRCRAFT_HEADING, new CommonCallbacks.CompletionCallback() {
+                    @Override
+                    public void onResult(DJIError djiError) {
+
+                    }
+                });
+
+                flightController.setVirtualStickModeEnabled(true, new CommonCallbacks.CompletionCallback() {
+                    @Override
+                    public void onResult(DJIError djiError) {
+                        flightController.setVirtualStickAdvancedModeEnabled(true);
+                        DialogUtils.showDialogBasedOnError(getContext(), djiError);
+                    }
+                });
+
+                new CountDownTimer(5000, 1000) {
+                    public void onFinish() {
+                        // When timer is finished
+                        // Execute your code here
+                    }
+
+                    public void onTick(long millisUntilFinished) {
+                        // millisUntilFinished    The amount of time until finished.
+                    }
+                }.start();
+
+                ToastUtils.showToast("Control_mode: " + flightController.isVirtualStickControlModeAvailable());
+
+                flightController.startTakeoff(new CommonCallbacks.CompletionCallback() {
+                    @Override
+                    public void onResult(DJIError djiError) {
+                        ToastUtils.showToast("Takeoff Done");
+                    }
+                });
+
+                new CountDownTimer(15000, 5000) {
+                    public void onFinish() {
+                        myVirtualTask = new SendVirtualStickDataTask();
+                        randomTimer1 = new Timer();
+//                        randomTimer1.schedule(myVirtualTask, 0,200);
+//                        flightControlData.setYaw(30F);
+//                        flightControlData.setVerticalThrottle(0.5F);  -- not needed
+                        randomTimer1.scheduleAtFixedRate(myVirtualTask, 0,200);
+                        ToastUtils.showToast("Altitude: "  + flightControlData.getVerticalThrottle());
+
+                    }
+                    public void onTick(long millisUntilFinished) {
+//                        flightControlData.setYaw(30F);
+                        flightControlData.setVerticalThrottle(0.25F);
+//                        flightControlData.setRoll(5F);
+//                        flightControlData.setPitch(5F);
+                        ToastUtils.showToast("Altitude: "  + flightControlData.getVerticalThrottle());
+                        // millisUntilFinished    The amount of time until finished.
+                    }
+                }.start();
+
+                new CountDownTimer(15000, 1000) {
+                    public void onFinish() {
+                        flightController.startLanding(new CommonCallbacks.CompletionCallback() {
+                            @Override
+                            public void onResult(DJIError djiError) {
+                                ToastUtils.showToast("Landing complete");
+                            }
+                        });
+                    }
+                    public void onTick(long millisUntilFinished) {
+                        // millisUntilFinished    The amount of time until finished.
+                    }
+                }.start();
                 break;
 
             case R.id.btn_roll_pitch_control_mode:
@@ -391,14 +505,18 @@ public class  VirtualStickView extends RelativeLayout
             if (ModuleVerificationUtil.isFlightControllerAvailable()) {
                 DJISampleApplication.getAircraftInstance()
                         .getFlightController()
-                        .sendVirtualStickFlightControlData(new FlightControlData(pitch,
-                                        roll,
-                                        yaw,
-                                        throttle),
+//                        .sendVirtualStickFlightControlData(new FlightControlData(pitch,
+//                                        roll,
+//                                        yaw,
+//                                        throttle),
+                        .sendVirtualStickFlightControlData(flightControlData,
                                 new CommonCallbacks.CompletionCallback() {
                                     @Override
                                     public void onResult(DJIError djiError) {
-
+//                                        ToastUtils.showToast("Data sent Successfully");
+                                        if(djiError!=null) {
+                                            ToastUtils.showToast("Error!!!");
+                                        }
                                     }
                                 });
             }
